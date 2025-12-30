@@ -1,0 +1,60 @@
+name: No-IP Hostname Renewal
+
+on:
+  schedule:
+    # Runs at 00:00 UTC on the 1st day of every month (approximately every 30 days)
+    - cron: '0 0 1 * *'
+
+  # Allows manual trigger from GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  renew-hostname:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+      - name: Install Playwright browsers
+        run: poetry run playwright install chromium --with-deps
+
+      - name: Run No-IP renewal script
+        env:
+          DNS_HOSTNAME: ${{ secrets.DNS_HOSTNAME }}
+          NOIP_USERNAME: ${{ secrets.NOIP_USERNAME }}
+          NOIP_PASSWORD: ${{ secrets.NOIP_PASSWORD }}
+          OTP_SECRET: ${{ secrets.OTP_SECRET }}
+        run: poetry run python main.py
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dns-renewal-screenshot-${{ github.run_number }}
+          path: dns_renewal_*.png
+          retention-days: 90
+          if-no-files-found: ignore
